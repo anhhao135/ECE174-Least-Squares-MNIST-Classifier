@@ -2,6 +2,24 @@ import scipy.linalg
 import scipy.io
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+a = np.matrix('1 2; 5 10')
+
+b = np.matrix('5 25; 25 125')
+
+b_inv = scipy.linalg.pinv(b)
+
+b_inv_a = np.matmul(b_inv, a)
+
+result = np.matmul(b_inv_a, np.matrix('1; 5'))
+
+print(result)
+
+
+
+
+'''
 mnist = scipy.io.loadmat('mnist.mat')
 
 
@@ -56,4 +74,4 @@ betaX = np.matmul(basis_new, beta)
 
 print(len(betaX))
 
-
+'''
