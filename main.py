@@ -63,16 +63,28 @@ def sign(x):
 
 
 
-def evaluateClassifier(classifier, evaluationImages, evaluationLabels):
+def evaluateClassifier(classifier, evaluationImages, evaluationLabels, evaluationName, displayConfusionMatrix = True):
 
     confusionMatrix = np.zeros((10,10))
+    errorCount = 0
     for i in range(len(evaluationImages)):
         groundTruth = evaluationLabels[i]
         prediction = classifier.predict(evaluationImages[i])
         confusionMatrix[groundTruth,prediction] = confusionMatrix[groundTruth,prediction] + 1
+        if groundTruth != prediction:
+            errorCount = errorCount + 1
+        
 
+    errorRate = errorCount / len(evaluationImages)
 
-    return confusionMatrix
+    if displayConfusionMatrix:
+        fig = plt.figure
+        plt.title(str(evaluationName))
+        plt.suptitle("Error rate: " + str(errorRate))
+        plt.imshow(confusionMatrix, cmap='viridis')
+        plt.show()
+
+    return confusionMatrix, errorRate
 
 
 class LLSClassifier:
@@ -132,7 +144,7 @@ class oneVersusAllClassifier:
         return np.argmax(scoreArray)
 
 
-class oneVerusOneClassifier:
+class oneVersusOneClassifier:
     def __init__(self, trainImages, trainLabels, binary = False):
         self.trainImages = np.copy(trainImages)
         self.trainLabels = np.copy(trainLabels)
@@ -169,8 +181,8 @@ def ReLU(x):
     else:
         return 0
 
-def addRandomNoise(inputImage, noiseAmount):
-    imageLength = len(inputImage)
+def addRandomNoise(inputImages, noiseAmount):
+    imageLength = len(inputImages[0])
     noiseVector = np.zeros(imageLength)
 
     noiseLimit = noiseAmount / np.sqrt(imageLength)
@@ -178,10 +190,16 @@ def addRandomNoise(inputImage, noiseAmount):
     for i in range(imageLength):
         noiseVector[i] = np.random.uniform(-noiseLimit, noiseLimit)
 
+    
 
-    noisyImage = inputImage + noiseVector
 
-    return noisyImage
+    noisyImages = []
+
+    for inputImage in inputImages:
+        noisyImage = inputImage + noiseVector
+        noisyImages.append(noisyImage)
+
+    return noisyImages
 
 
 class randomFeatureMap:
@@ -190,11 +208,11 @@ class randomFeatureMap:
         self.W = np.zeros((featureNum, inputImageLength))
         for i in range(featureNum):
             for j in range(inputImageLength):
-                self.W[i, j] = np.random.normal(0, 1)
+                self.W[i, j] = np.random.poisson(0, 1)
 
         self.b = np.zeros(featureNum)
         for i in range(featureNum):
-            self.b[i] = np.random.normal(0, 1)
+            self.b[i] = np.random.poisson(0, 1)
 
     def map(self, inputImage):
 
@@ -225,38 +243,178 @@ class randomFeatureMap:
 
             return h
 
-    
+
+def mapImages(inputImages, mapper):
+
+    mappedInputImages = []
+    for i in range(len(inputImages)):
+        mappedInputImages.append(mapper.map(inputImages[i]))
+
+    return mappedInputImages
 
 mnist = scipy.io.loadmat('mnist.mat')
 
-trainX = mnist['trainX'][1:25000] / 255 #60k train images normalized
-trainY = mnist['trainY'][0][1:25000].astype('int32') #60k train labels
+trainX = mnist['trainX'][1:3000] / 255 #60k train images normalized
+trainY = mnist['trainY'][0][1:3000].astype('int32') #60k train labels
 
-testX = mnist['testX'] / 255 #10k test images
-testY = mnist['testY'][0].astype('int32') # 10k test labels
-
-randomMap = randomFeatureMap(1000, len(testX[0]), "sigmoid")
-
-remappedTrainX = []
-remappedTestX = []
-
-for i in range(len(trainX)):
-    remappedTrainX.append(randomMap.map(trainX[i]))
-
-for i in range(len(testX)):
-    remappedTestX.append(randomMap.map(testX[i]))
-
-oneVallClassifier = oneVerusOneClassifier(remappedTrainX, trainY)
+testX = mnist['testX'][1:500] / 255 #10k test images
+testY = mnist['testY'][0][1:500].astype('int32') # 10k test labels
 
 
-confusionMatrix = evaluateClassifier(oneVallClassifier, remappedTestX, testY)
+#problem 2
+'''
+    
+OneVsOneClassifier = oneVersusOneClassifier(trainX, trainY)
 
-print(confusionMatrix)
+OneVsAllClassifier = oneVersusAllClassifier(trainX, trainY)
+
+OneVsOneTrainingConfusionMatrix, OneVsOneTrainingError = evaluateClassifier(OneVsOneClassifier, trainX, trainY, "1 v 1 train")
+OneVsOneTestingConfusionMatrix, OneVsOneTestingError = evaluateClassifier(OneVsOneClassifier, testX, testY, "1 v 1 test")
+
+OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, trainX, trainY, "1 v all train")
+OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, testX, testY, "1 v all test") 
+
+'''
+#problem 3d
 
 
-fig = plt.figure
-plt.imshow(confusionMatrix, cmap='gray')
+
+identityRandomMapper = randomFeatureMap(1000, len(testX[0]), "identity")
+sigmoidRandomMapper = randomFeatureMap(1000, len(testX[0]), "sigmoid")
+sineRandomMapper = randomFeatureMap(1000, len(testX[0]), "sine")
+reluRandomMapper = randomFeatureMap(1000, len(testX[0]), "relu")
+
+randomMappers = [identityRandomMapper, sigmoidRandomMapper, sineRandomMapper, reluRandomMapper]
+
+for randomMapper in randomMappers:
+    mappedTrainX = mapImages(trainX, randomMapper)
+    mappedTestX = mapImages(testX, randomMapper)
+
+    OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY)
+
+    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, mappedTrainX, trainY, "1 v all train with remap " + randomMapper.nonlinearFunction)
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, mappedTestX, testY, "1 v all test with remap " + randomMapper.nonlinearFunction) 
+
+
+#relu does the best
+
+#problem 3e
+'''
+
+
+featureNum = []
+trainingError = []
+testingError = []
+
+
+for featureNum_ in range(1, 1000, 300):
+    print(featureNum_)   
+    reluRandomMapper = randomFeatureMap(featureNum_, len(testX[0]), "relu")
+    remappedTrainX = mapImages(trainX, reluRandomMapper)
+    remappedTestX = mapImages(testX, reluRandomMapper)
+    
+    OneVsAllClassifier = oneVersusAllClassifier(remappedTrainX, trainY)
+
+    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, remappedTrainX, trainY, "1 v all train with remap " + reluRandomMapper.nonlinearFunction, False)
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, remappedTestX, testY, "1 v all test with remap " + reluRandomMapper.nonlinearFunction, False) 
+
+    featureNum.append(featureNum_)
+    trainingError.append(OneVsAllTrainingError)
+    testingError.append(OneVsAllTestingError)
+
+print(featureNum)
+print(testingError)
+
+fig, ax = plt.subplots()
+ax.plot(featureNum, testingError)
+
+ax.set(xlabel='Number of features', ylabel='Error rate',
+    title='About as simple as it gets, folks')
+ax.grid()
 plt.show()
+
+
+'''
+
+
+
+
+#problem3f
+
+'''
+
+reluRandomMapper = randomFeatureMap(100, len(testX[0]), "sigmoid")
+
+mappedTrainX = mapImages(trainX, reluRandomMapper)
+mappedTestX = mapImages(testX, reluRandomMapper)
+
+OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY)
+
+
+noiseAmount = []
+trainingError = []
+testingError = []
+
+
+for noiseAmount_ in range(0,30,1):
+
+    noiseAmount_ = noiseAmount_ / 10
+
+    print(noiseAmount_)
+
+    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, addRandomNoise(mappedTrainX, noiseAmount_), trainY, "1 v all train", False)
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, addRandomNoise(mappedTestX, noiseAmount_), testY, "1 v all test", False) 
+
+    noiseAmount.append(noiseAmount_)
+    trainingError.append(OneVsAllTrainingError)
+    testingError.append(OneVsAllTestingError)
+
+fig, ax = plt.subplots()
+
+print(testingError)
+
+ax.plot(noiseAmount, testingError)
+
+ax.set(xlabel='Noise amount', ylabel='Error rate',
+    title='About as simple as it gets, folks')
+ax.grid()
+plt.show()
+
+
+'''
+
+#problem3g
+
+'''
+
+fixedTestImage = np.array([testX[1234]])
+fixedTestLabel = testY[1234]
+
+print(fixedTestLabel)
+
+classifier = LLSClassifier(trainX, trainY, fixedTestLabel, False)
+
+noiseAmount = []
+prediction = []
+
+for noiseAmount_ in range(0,30,1):
+    noiseAmount_ = noiseAmount_ / 10
+    print(noiseAmount_)
+    prediction_ = classifier.predict(addRandomNoise(fixedTestImage, noiseAmount_)[0])
+    noiseAmount.append(noiseAmount_)
+    prediction.append(prediction_)
+
+fig, ax = plt.subplots()
+
+ax.plot(noiseAmount, prediction)
+
+ax.set(xlabel='Noise amount', ylabel='Classifier prediction',
+    title='About as simple as it gets, folks')
+ax.grid()
+plt.show()
+
+
+'''
 
 
 '''
@@ -357,8 +515,5 @@ for i in range(200):
     prediction = np.matmul(np.transpose(beta), testX[i]) + alpha
     print(prediction)
     print(testY[i])
-
-
-
 
 '''
