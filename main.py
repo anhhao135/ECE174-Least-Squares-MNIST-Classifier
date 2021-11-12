@@ -54,13 +54,33 @@ def generatePairs(inputList):
 
     
 
+def sign(x):
+    if x > 0:
+        return 1
+    else:
+        return -1
+
+
+
+
+def evaluateClassifier(classifier, evaluationImages, evaluationLabels):
+
+    confusionMatrix = np.zeros((10,10))
+    for i in range(len(evaluationImages)):
+        groundTruth = evaluationLabels[i]
+        prediction = classifier.predict(evaluationImages[i])
+        confusionMatrix[groundTruth,prediction] = confusionMatrix[groundTruth,prediction] + 1
+
+
+    return confusionMatrix
 
 
 class LLSClassifier:
-    def __init__(self, trainImages, trainLabels, targetLabel):
+    def __init__(self, trainImages, trainLabels, targetLabel, binary = False):
 
         self.trainImages = np.copy(trainImages)
         self.trainLabels = np.copy(trainLabels)
+        self.binary = binary
 
 
         for i in range(len(self.trainLabels)):
@@ -87,7 +107,10 @@ class LLSClassifier:
     
     def predict(self, inputImage):
         prediction = np.matmul(np.transpose(self.beta), inputImage) + self.alpha
-        return prediction
+        if self.binary == False:
+            return prediction
+        else:
+            return sign(prediction)
 
 class oneVersusAllClassifier:
     def __init__(self, trainImages, trainLabels):
@@ -105,18 +128,19 @@ class oneVersusAllClassifier:
         for classifier in self.classifiers:
             predictionScore = classifier.predict(inputImage)
             scoreArray.append(predictionScore)
+        
         return np.argmax(scoreArray)
 
 
 class oneVerusOneClassifier:
-    def __init__(self, trainImages, trainLabels):
+    def __init__(self, trainImages, trainLabels, binary = False):
         self.trainImages = np.copy(trainImages)
         self.trainLabels = np.copy(trainLabels)
         self.classifiers = []
 
         for i in range(10):
             print(i)
-            classifier = LLSClassifier(self.trainImages, self.trainLabels, i)
+            classifier = LLSClassifier(self.trainImages, self.trainLabels, i, binary)
             self.classifiers.append(classifier)
 
     def predict(self, inputImage):
@@ -137,39 +161,103 @@ class oneVerusOneClassifier:
 
         return np.argmax(voteArray)
 
+
+
+def ReLU(x):
+    if x > 0:
+        return x
+    else:
+        return 0
+
+def addRandomNoise(inputImage, noiseAmount):
+    imageLength = len(inputImage)
+    noiseVector = np.zeros(imageLength)
+
+    noiseLimit = noiseAmount / np.sqrt(imageLength)
+
+    for i in range(imageLength):
+        noiseVector[i] = np.random.uniform(-noiseLimit, noiseLimit)
+
+
+    noisyImage = inputImage + noiseVector
+
+    return noisyImage
+
+
+class randomFeatureMap:
+    def __init__(self, featureNum, inputImageLength, nonlinearFunction):
+        self.nonlinearFunction = nonlinearFunction
+        self.W = np.zeros((featureNum, inputImageLength))
+        for i in range(featureNum):
+            for j in range(inputImageLength):
+                self.W[i, j] = np.random.normal(0, 1)
+
+        self.b = np.zeros(featureNum)
+        for i in range(featureNum):
+            self.b[i] = np.random.normal(0, 1)
+
+    def map(self, inputImage):
+
+        h = np.matmul(self.W, inputImage)
+        h = h + self.b
+
+        if self.nonlinearFunction == "identity":
+            return h
+
+        if self.nonlinearFunction == "sigmoid":
+
+            for i in range(h.shape[0]):
+                h[i] = 1 / (1 + np.exp(h[i]))
+
+            return h
+
+        if self.nonlinearFunction == "sine":
+
+            for i in range(h.shape[0]):
+                h[i] = np.sin(h[i])
+
+            return h
+
+        if self.nonlinearFunction == "relu":
+
+            for i in range(h.shape[0]):
+                h[i] = ReLU(h[i])
+
+            return h
+
     
-
-
-
-
-
-
 
 mnist = scipy.io.loadmat('mnist.mat')
 
+trainX = mnist['trainX'][1:25000] / 255 #60k train images normalized
+trainY = mnist['trainY'][0][1:25000].astype('int32') #60k train labels
 
-#for key, value in mnist.items() :
-    #print(key)
-
-#X are images
-#Y are labels
-
-trainX = mnist['trainX'][1:60000] / 255 #60k train images normalized
-trainY = mnist['trainY'][0][1:60000].astype('int32') #60k train labels
-
-testX = mnist['testX'] #10k test images
+testX = mnist['testX'] / 255 #10k test images
 testY = mnist['testY'][0].astype('int32') # 10k test labels
 
-oneVoneClassifier = oneVerusOneClassifier(trainX, trainY)
+randomMap = randomFeatureMap(1000, len(testX[0]), "sigmoid")
+
+remappedTrainX = []
+remappedTestX = []
+
+for i in range(len(trainX)):
+    remappedTrainX.append(randomMap.map(trainX[i]))
+
+for i in range(len(testX)):
+    remappedTestX.append(randomMap.map(testX[i]))
+
+oneVallClassifier = oneVerusOneClassifier(remappedTrainX, trainY)
 
 
+confusionMatrix = evaluateClassifier(oneVallClassifier, remappedTestX, testY)
+
+print(confusionMatrix)
 
 
+fig = plt.figure
+plt.imshow(confusionMatrix, cmap='gray')
+plt.show()
 
-for i in range(100):
-    prediction = oneVoneClassifier.predict(testX[i])
-    print("pred: " + str(prediction))
-    print("gt: " + str(testY[i]))
 
 '''
 
