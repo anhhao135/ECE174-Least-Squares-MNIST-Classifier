@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+#ECE 174 mini project 1 Fall 2021
+#Hao Le A15547504
+
+
+
 #utility functions
 
 
@@ -82,8 +87,10 @@ def evaluateClassifier(classifier, evaluationImages, evaluationLabels, evaluatio
 
     if displayConfusionMatrix: #check if confusion matrix visualization is wanted
         fig = plt.figure
-        plt.title(str(evaluationName))
+        plt.title(str(evaluationName + " confusion matrix"))
         plt.suptitle("Error rate: " + str(errorRate))
+        plt.xlabel('prediction')
+        plt.ylabel('ground truth')
         plt.imshow(confusionMatrix, cmap='viridis')
         plt.show()
 
@@ -169,7 +176,7 @@ class LLSClassifier:
             return sign(prediction)
 
 
-#different implementations of multi-class classifier that uses the LLS binary classifier
+#different implementations of multi-class classifiers that uses the LLS binary classifier
 
 class oneVersusAllClassifier:
     #predict based on the outputs of 10 different LLS classifiers, all trained to care about different classes from 0-9
@@ -181,7 +188,7 @@ class oneVersusAllClassifier:
         self.classifiers = []
 
         for i in range(10): #create a list of binary classifiers for 0-9
-            print(i)
+            print("training binary classifier for: " + str(i))
             classifier = LLSClassifier(self.trainImages, self.trainLabels, i)
             self.classifiers.append(classifier)
         
@@ -202,28 +209,48 @@ class oneVersusOneClassifier:
     def __init__(self, trainImages, trainLabels, binary = False):
         self.trainImages = np.copy(trainImages)
         self.trainLabels = np.copy(trainLabels)
-        self.classifiers = []
 
-        for i in range(10): #create a list of binary classifiers for 0-9
-            print(i)
-            classifier = LLSClassifier(self.trainImages, self.trainLabels, i, binary) #we are using binary outputs here, but non-binary would also work since we are just comparing who gets higher prediction score
-            self.classifiers.append(classifier)
+        self.pairs = generatePairs(np.array([0,1,2,3,4,5,6,7,8,9])) #10 choose 2 pairs
+
+        self.pairsClassifiers = []
+
+        for pair in self.pairs: #iterate through all possible pairs and train the relevant classifier
+
+            print("training classifier for pair " + str(pair))
+
+
+            #data with only the two classes in the pair
+
+            relevantTrainImages = []
+            relevantTrainLabels = []
+            
+
+            for i in range(len(self.trainLabels)): #filter out training set to only include images/labels with either class in pair
+                if self.trainLabels[i] == pair[0] or self.trainLabels[i] == pair[1]:
+                    relevantTrainImages.append(self.trainImages[i])
+                    relevantTrainLabels.append(self.trainLabels[i])
+
+            relevantClassifier = LLSClassifier(relevantTrainImages, relevantTrainLabels, pair[0], binary = True) #train relevant binary classifier for pair; the target label is the 1st in the pair, so output will be 1 if 1st class is detected, else -1
+
+            self.pairsClassifiers.append(relevantClassifier) #add classifier to the classifier list with matching order to the generated pairs list
+
 
     def predict(self, inputImage):
 
         voteArray = np.zeros(10) #tally to keep track of votes; index is representative of the label class
-        pairs = generatePairs(np.array([0,1,2,3,4,5,6,7,8,9])) #10 choose 2 pairs
 
-        for pair in pairs:
-            firstClassPrediction = self.classifiers[pair[0]].predict(inputImage)
-            secondClassPrediction = self.classifiers[pair[1]].predict(inputImage)
+        for i in range(len(self.pairs)): #iterate through pairs to get 45 votes in total
 
-            if (firstClassPrediction > secondClassPrediction): #check which classifier gets the higher score; this will give the vote to the corresponding class label
-                voteArray[pair[0]] = voteArray[pair[0]] + 1 #increment tally based on index of class label
+            prediction = self.pairsClassifiers[i].predict(inputImage)
+
+            if (prediction == 1): #check if prediction is 1, if so then the first class gets the vote
+                voteArray[self.pairs[i][0]] = voteArray[self.pairs[i][0]] + 1 #increment tally based on index of class label
             else:
-                voteArray[pair[1]] = voteArray[pair[1]] + 1
+                voteArray[self.pairs[i][1]] = voteArray[self.pairs[i][1]] + 1
 
         return np.argmax(voteArray) #prediction is whichever class gets most votes; ties are settled randomly in numpy's argmax function
+
+
 
 
 #random feature mapper that stores its own mapping matrix, offset vector, and non-linearity function
@@ -279,169 +306,245 @@ class randomFeatureMap:
 
 
 
+#main code
 
 
 
-
+#loading mnist data into arrays
 
 mnist = scipy.io.loadmat('mnist.mat')
 
-trainX = mnist['trainX'][1:300] / 255 #60k train images normalized
-trainY = mnist['trainY'][0][1:300].astype('int32') #60k train labels
+#specify the length of the subsets from training and testing sets
 
-testX = mnist['testX'][1:100] / 255 #10k test images
-testY = mnist['testY'][0][1:100].astype('int32') # 10k test labels
+trainExamples = 60000
+testExamples = 10000
 
+
+trainX = mnist['trainX'][0:trainExamples] / 255 #divide by 255 to normalize pixel values
+trainY = mnist['trainY'][0][0:trainExamples].astype('int32') #cast to int32 so labels can be changed to negative values
+
+testX = mnist['testX'][0:testExamples] / 255
+testY = mnist['testY'][0][0:testExamples].astype('int32')
+
+
+
+'''
 
 #problem 2
+
+
+
+OneVsOneClassifier = oneVersusOneClassifier(trainX, trainY, True) #enable sign function within the binary classifiers of 1v1 multiclassifer
+OneVsAllClassifier = oneVersusAllClassifier(trainX, trainY) #instantiate one of each multiclass classifiers, then train them with clean
+
+#evaluate the training and testing performance of the classifiers
+
+OneVsOneTrainingConfusionMatrix, OneVsOneTrainingError = evaluateClassifier(OneVsOneClassifier, trainX, trainY, "1 v 1 training")
+OneVsOneTestingConfusionMatrix, OneVsOneTestingError = evaluateClassifier(OneVsOneClassifier, testX, testY, "1 v 1 testing")
+
+OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, trainX, trainY, "1 v all training")
+OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, testX, testY, "1 v all testing") 
+
+
 '''
-    
-OneVsOneClassifier = oneVersusOneClassifier(trainX, trainY)
 
-OneVsAllClassifier = oneVersusAllClassifier(trainX, trainY)
-
-OneVsOneTrainingConfusionMatrix, OneVsOneTrainingError = evaluateClassifier(OneVsOneClassifier, trainX, trainY, "1 v 1 train")
-OneVsOneTestingConfusionMatrix, OneVsOneTestingError = evaluateClassifier(OneVsOneClassifier, testX, testY, "1 v 1 test")
-
-OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, trainX, trainY, "1 v all train")
-OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, testX, testY, "1 v all test") 
 
 '''
+
+
 #problem 3d
 
 
 
-identityRandomMapper = randomFeatureMap(100, len(testX[0]), "identity")
-sigmoidRandomMapper = randomFeatureMap(100, len(testX[0]), "sigmoid")
-sineRandomMapper = randomFeatureMap(100, len(testX[0]), "sine")
-reluRandomMapper = randomFeatureMap(100, len(testX[0]), "relu")
+#chosen to use one vs all classifier for experiment
 
-randomMappers = [identityRandomMapper, sigmoidRandomMapper, sineRandomMapper, reluRandomMapper]
 
-for randomMapper in randomMappers:
+featureNum = 1000
+
+#create instances of the four different mappers
+
+identityRandomMapper = randomFeatureMap(featureNum, len(testX[0]), "identity")
+sigmoidRandomMapper = randomFeatureMap(featureNum, len(testX[0]), "sigmoid")
+sineRandomMapper = randomFeatureMap(featureNum, len(testX[0]), "sine")
+reluRandomMapper = randomFeatureMap(featureNum, len(testX[0]), "relu")
+
+randomMappers = [identityRandomMapper, sigmoidRandomMapper, sineRandomMapper, reluRandomMapper] #put mappers in iterable list
+
+for randomMapper in randomMappers: #go through each mapper for experiment
     mappedTrainX = mapImages(trainX, randomMapper)
-    mappedTestX = mapImages(testX, randomMapper)
+    mappedTestX = mapImages(testX, randomMapper) #map both train and test images to feature space
 
-    OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY)
+    OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY) #train classifier with mapped images
 
-    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, mappedTrainX, trainY, "1 v all train with remap " + randomMapper.nonlinearFunction)
-    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, mappedTestX, testY, "1 v all test with remap " + randomMapper.nonlinearFunction) 
+    #evaluate training and testing performance of feature-trained classifier
+
+    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, mappedTrainX, trainY, "1 v all training with random mapping + " + randomMapper.nonlinearFunction)
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, mappedTestX, testY, "1 v all testing with random mapping + " + randomMapper.nonlinearFunction) #specify the type of non linearity in the title 
 
 
-#relu does the best
 
-#problem 3e
+
+
 '''
 
+
+
+'''
+
+
+#problem 3e
+
+#using 1 v all classifier for this experiment
+
+#chosen to keep identity function to allow comparision with base classifier
+
+
+#create empty lists to add data points to as number of features varies
 
 featureNum = []
 trainingError = []
 testingError = []
 
+#specify range and increment of increasing number of features in experiment
 
-for featureNum_ in range(1, 1000, 300):
-    print(featureNum_)   
-    reluRandomMapper = randomFeatureMap(featureNum_, len(testX[0]), "relu")
+minFeatureNum = 1
+maxFeatureNum = 1000
+featureNumIncrement = 50
+
+
+for featureNum_ in range(minFeatureNum, maxFeatureNum, featureNumIncrement):
+
+    print("testing " + str(featureNum_) + " number of features")   
+
+    #create identity mapper, then map training and testing images
+
+    reluRandomMapper = randomFeatureMap(featureNum_, len(testX[0]), "identity")
     remappedTrainX = mapImages(trainX, reluRandomMapper)
     remappedTestX = mapImages(testX, reluRandomMapper)
+
+    #train classifier with mapped images
     
     OneVsAllClassifier = oneVersusAllClassifier(remappedTrainX, trainY)
 
-    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, remappedTrainX, trainY, "1 v all train with remap " + reluRandomMapper.nonlinearFunction, False)
-    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, remappedTestX, testY, "1 v all test with remap " + reluRandomMapper.nonlinearFunction, False) 
+    #evaluate classifier with mapped images
+
+    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, remappedTrainX, trainY, "1 v all training with random mapping + " + reluRandomMapper.nonlinearFunction, False)
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, remappedTestX, testY, "1 v all testing with random mapping +" + reluRandomMapper.nonlinearFunction, False) #False since we don't need the pop up confusion matrix window
 
     featureNum.append(featureNum_)
     trainingError.append(OneVsAllTrainingError)
-    testingError.append(OneVsAllTestingError)
+    testingError.append(OneVsAllTestingError) #add experiment data points to the lists
 
-print(featureNum)
-print(testingError)
 
-fig, ax = plt.subplots()
-ax.plot(featureNum, testingError)
+#plot data
 
-ax.set(xlabel='Number of features', ylabel='Error rate',
-    title='About as simple as it gets, folks')
-ax.grid()
+plt.plot(featureNum, testingError, label = "testing error")
+plt.plot(featureNum, trainingError, label = "training error")
+plt.title("Error rate vs. number of features")
+plt.xlabel('Number of features')
+plt.ylabel('Error rate')
+plt.legend()
 plt.show()
 
 
 '''
 
 
-
-
-#problem3f
-
 '''
 
-reluRandomMapper = randomFeatureMap(100, len(testX[0]), "sigmoid")
 
-mappedTrainX = mapImages(trainX, reluRandomMapper)
-mappedTestX = mapImages(testX, reluRandomMapper)
+#problem 3f
 
-OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY)
+featureNum = 200
 
+randomMapper = randomFeatureMap(featureNum, len(testX[0]), "relu") #change the type of linearity for experiment by specifying in last argument
+
+mappedTrainX = mapImages(trainX, randomMapper)
+mappedTestX = mapImages(testX, randomMapper)
+
+OneVsAllClassifier = oneVersusAllClassifier(mappedTrainX, trainY) #chosen one v all classifier; changed input from clean trainX to mappedTrainX for mapped images
+
+
+#lists for data points
+#in this experiment, only testing error is reported
 
 noiseAmount = []
-trainingError = []
 testingError = []
 
+minNoiseAmount = 0 #no noise for base
+maxNoiseAmount = 30
+noiseAmountIncrement = 1
 
-for noiseAmount_ in range(0,30,1):
+for noiseAmount_ in range(minNoiseAmount,maxNoiseAmount,noiseAmountIncrement): 
 
-    noiseAmount_ = noiseAmount_ / 10
+    noiseAmount_ = noiseAmount_ / 10 #divide by 10 for finer increments
 
-    print(noiseAmount_)
+    print("testing noise amount: " + str(noiseAmount_))
 
-    OneVsAllTrainingConfusionMatrix, OneVsAllTrainingError = evaluateClassifier(OneVsAllClassifier, addRandomNoise(mappedTrainX, noiseAmount_), trainY, "1 v all train", False)
-    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, addRandomNoise(mappedTestX, noiseAmount_), testY, "1 v all test", False) 
+    OneVsAllTestingConfusionMatrix, OneVsAllTestingError = evaluateClassifier(OneVsAllClassifier, addRandomNoise(mappedTestX, noiseAmount_), testY, "1 v all testing on noisy images", False) #evaluate the classifier on a noisy test image
 
     noiseAmount.append(noiseAmount_)
-    trainingError.append(OneVsAllTrainingError)
-    testingError.append(OneVsAllTestingError)
+    testingError.append(OneVsAllTestingError) #add data points to lists
 
-fig, ax = plt.subplots()
 
-print(testingError)
+#plot data
 
-ax.plot(noiseAmount, testingError)
-
-ax.set(xlabel='Noise amount', ylabel='Error rate',
-    title='About as simple as it gets, folks')
-ax.grid()
+plt.plot(noiseAmount, testingError, label = randomMapper.nonlinearFunction) #specify non linear function in label
+plt.title("Testing error rate vs. noise amount in test images")
+plt.xlabel('Noise amount')
+plt.ylabel('Testing error rate')
+plt.legend()
 plt.show()
 
 
-'''
 
-#problem3g
 
 '''
 
-fixedTestImage = np.array([testX[1234]])
-fixedTestLabel = testY[1234]
 
-print(fixedTestLabel)
 
-classifier = LLSClassifier(trainX, trainY, fixedTestLabel, False)
+'''
+
+
+
+
+#problem 3g
+
+
+#arbitrary selection of fixed testing data point
+
+fixedTestImage = np.array([testX[123]])
+fixedTestLabel = testY[123]
+
+
+classifier = LLSClassifier(trainX, trainY, fixedTestLabel, False) #instance of binary classifier that has the fixed data label as the target label; False means the classifier outputs raw non-binary prediction instead of {-1, 1}
+
+#vary noise experiment
 
 noiseAmount = []
 prediction = []
 
-for noiseAmount_ in range(0,30,1):
+minNoiseAmount = 0 #no noise for base
+maxNoiseAmount = 50
+noiseAmountIncrement = 1
+
+for noiseAmount_ in range(minNoiseAmount,maxNoiseAmount,noiseAmountIncrement):
+
     noiseAmount_ = noiseAmount_ / 10
-    print(noiseAmount_)
-    prediction_ = classifier.predict(addRandomNoise(fixedTestImage, noiseAmount_)[0])
+    print("testing noise amount: " + str(noiseAmount_))
+
+    prediction_ = classifier.predict(addRandomNoise(fixedTestImage, noiseAmount_)[0]) #run prediction on noisy test image
+
+    #add data to lists
+
     noiseAmount.append(noiseAmount_)
     prediction.append(prediction_)
 
-fig, ax = plt.subplots()
 
-ax.plot(noiseAmount, prediction)
-
-ax.set(xlabel='Noise amount', ylabel='Classifier prediction',
-    title='About as simple as it gets, folks')
-ax.grid()
+plt.plot(noiseAmount, prediction)
+plt.title("Binary classifier raw prediction output vs. noise amount in fixed test image")
+plt.xlabel('Noise amount')
+plt.ylabel('Raw prediction')
 plt.show()
+
 '''
